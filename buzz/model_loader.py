@@ -107,7 +107,7 @@ class ModelLoader(QObject):
             self.progress.emit((100, 100))
 
         else:
-            raise Exception("Invalid model type: " + self.model_type.value)
+            raise Exception(f"Invalid model type: {self.model_type.value}")
 
         self.finished.emit(file_path)
 

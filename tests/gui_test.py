@@ -312,7 +312,7 @@ class TestFileTranscriberWidget:
 
 class TestAboutDialog:
     def test_should_check_for_updates(self, qtbot: QtBot):
-        reply = MockNetworkReply(data={'name': 'v' + VERSION})
+        reply = MockNetworkReply(data={'name': f'v{VERSION}'})
         manager = MockNetworkAccessManager(reply=reply)
         dialog = AboutDialog(network_access_manager=manager)
         qtbot.add_widget(dialog)

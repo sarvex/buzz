@@ -10,7 +10,7 @@ from PyQt6.QtCore import QTranslator, QLocale
 from appdirs import user_log_dir
 
 # Check for segfaults if not running in frozen mode
-if getattr(sys, 'frozen', False) is False:
+if not getattr(sys, 'frozen', False):
     faulthandler.enable()
 
 # Sets stderr to no-op TextIO when None (run as Windows GUI).

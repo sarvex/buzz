@@ -294,7 +294,7 @@ class WhisperCppFileTranscriber(FileTranscriber):
             'word level timings = %s',
             self.file_path, self.language, self.task, model_path, self.word_level_timings)
 
-        wav_file = tempfile.mktemp() + '.wav'
+        wav_file = f'{tempfile.mktemp()}.wav'
         (
             ffmpeg.input(self.file_path)
             .output(wav_file, acodec="pcm_s16le", ac=1, ar=whisper.audio.SAMPLE_RATE)
@@ -331,7 +331,10 @@ class WhisperCppFileTranscriber(FileTranscriber):
     def stop(self):
         if self.running:
             process_state = self.process.state()
-            if process_state == QProcess.ProcessState.Starting or process_state == QProcess.ProcessState.Running:
+            if process_state in [
+                QProcess.ProcessState.Starting,
+                QProcess.ProcessState.Running,
+            ]:
                 self.process.terminate()
 
     def read_std_out(self):
@@ -345,11 +348,11 @@ class WhisperCppFileTranscriber(FileTranscriber):
                     segment = Segment(start, end, text.strip())
                     self.segments.append(segment)
                     self.progress.emit((end, self.duration_audio_ms))
-        except (UnicodeDecodeError, ValueError):
+        except ValueError:
             pass
 
     def parse_timings(self, timings: str) -> Tuple[int, int]:
-        start, end = timings[1:len(timings) - 1].split(' --> ')
+        start, end = timings[1:-1].split(' --> ')
         return self.parse_timestamp(start), self.parse_timestamp(end)
 
     @staticmethod
@@ -368,8 +371,7 @@ class WhisperCppFileTranscriber(FileTranscriber):
                 if line.startswith('main: processing'):
                     match = re.search(r'samples, (.*) sec', line)
                     if match is not None:
-                        self.duration_audio_ms = round(
-                            float(match.group(1)) * 1000)
+                        self.duration_audio_ms = round(float(match[1]) * 1000)
         except UnicodeDecodeError:
             pass
 
@@ -384,7 +386,7 @@ class OpenAIWhisperAPIFileTranscriber(FileTranscriber):
         logging.debug('Starting OpenAI Whisper API file transcription, file path = %s, task = %s', self.file_path,
                       self.task)
 
-        wav_file = tempfile.mktemp() + '.wav'
+        wav_file = f'{tempfile.mktemp()}.wav'
         (
             ffmpeg.input(self.file_path)
             .output(wav_file, acodec="pcm_s16le", ac=1, ar=whisper.audio.SAMPLE_RATE)
@@ -403,9 +405,12 @@ class OpenAIWhisperAPIFileTranscriber(FileTranscriber):
             transcript = openai.Audio.transcribe("whisper-1", audio_file, response_format=response_format,
                                                  language=language)
 
-        segments = [Segment(segment["start"] * 1000, segment["end"] * 1000, segment["text"]) for segment in
-                    transcript["segments"]]
-        return segments
+        return [
+            Segment(
+                segment["start"] * 1000, segment["end"] * 1000, segment["text"]
+            )
+            for segment in transcript["segments"]
+        ]
 
     def stop(self):
         pass
@@ -506,12 +511,14 @@ class WhisperFileTranscriber(FileTranscriber):
             for segment in list(whisper_segments):
                 # Segment will contain words if word-level timings is True
                 if segment.words:
-                    for word in segment.words:
-                        segments.append(Segment(
+                    segments.extend(
+                        Segment(
                             start=int(word.start * 1000),
                             end=int(word.end * 1000),
-                            text=word.word
-                        ))
+                            text=word.word,
+                        )
+                        for word in segment.words
+                    )
                 else:
                     segments.append(Segment(
                         start=int(segment.start * 1000),
@@ -625,9 +632,9 @@ def segments_to_text(segments: List[Segment]) -> str:
 
 def to_timestamp(ms: float, ms_separator='.') -> str:
     hr = int(ms / (1000 * 60 * 60))
-    ms = ms - hr * (1000 * 60 * 60)
+    ms -= hr * (1000 * 60 * 60)
     min = int(ms / (1000 * 60))
-    ms = ms - min * (1000 * 60)
+    ms -= min * (1000 * 60)
     sec = int(ms / 1000)
     ms = int(ms - sec * 1000)
     return f'{hr:02d}:{min:02d}:{sec:02d}{ms_separator}{ms:03d}'
@@ -737,9 +744,11 @@ class FileTranscriberQueueWorker(QObject):
                 task=self.current_task)
         elif model_type == ModelType.OPEN_AI_WHISPER_API:
             self.current_transcriber = OpenAIWhisperAPIFileTranscriber(task=self.current_task)
-        elif model_type == ModelType.HUGGING_FACE or \
-                model_type == ModelType.WHISPER or \
-                model_type == ModelType.FASTER_WHISPER:
+        elif model_type in [
+            ModelType.HUGGING_FACE,
+            ModelType.WHISPER,
+            ModelType.FASTER_WHISPER,
+        ]:
             self.current_transcriber = WhisperFileTranscriber(task=self.current_task)
         else:
             raise Exception(f'Unknown model type: {model_type}')
@@ -781,9 +790,11 @@ class FileTranscriberQueueWorker(QObject):
     def cancel_task(self, task_id: int):
         self.canceled_tasks.add(task_id)
 
-        if self.current_task.id == task_id:
-            if self.current_transcriber is not None:
-                self.current_transcriber.stop()
+        if (
+            self.current_task.id == task_id
+            and self.current_transcriber is not None
+        ):
+            self.current_transcriber.stop()
 
     @pyqtSlot(str)
     def on_task_error(self, error: str):

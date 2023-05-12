@@ -114,10 +114,7 @@ class AudioDevicesComboBox(QComboBox):
             return default_system_device
 
         audio_devices = self.get_audio_devices()
-        if len(audio_devices) > 0:
-            return audio_devices[0][0]
-
-        return -1
+        return audio_devices[0][0] if len(audio_devices) > 0 else -1
 
 
 class LanguagesComboBox(QComboBox):
@@ -150,7 +147,7 @@ class TasksComboBox(QComboBox):
 
     def __init__(self, default_task: Task, parent: Optional[QWidget], *args) -> None:
         super().__init__(parent, *args)
-        self.tasks = [i for i in Task]
+        self.tasks = list(Task)
         self.addItems(map(lambda task: task.value.title(), self.tasks))
         self.currentIndexChanged.connect(self.on_index_changed)
         self.setCurrentText(default_task.value.title())
@@ -301,7 +298,9 @@ class FileTranscriberWidget(QWidget):
     def on_transcription_options_changed(self, transcription_options: TranscriptionOptions):
         self.transcription_options = transcription_options
         self.word_level_timings_checkbox.setDisabled(
-            self.transcription_options.model.model_type == ModelType.HUGGING_FACE or self.transcription_options.model.model_type == ModelType.OPEN_AI_WHISPER_API)
+            self.transcription_options.model.model_type
+            in [ModelType.HUGGING_FACE, ModelType.OPEN_AI_WHISPER_API]
+        )
         if self.transcription_options.openai_access_token is not None:
             self.openai_access_token_changed.emit(self.transcription_options.openai_access_token)
 
@@ -679,7 +678,7 @@ class RecordingTranscriberWidget(QWidget):
 
     def on_next_transcription(self, text: str):
         text = text.strip()
-        if len(text) > 0:
+        if text != "":
             self.text_box.moveCursor(QTextCursor.MoveOperation.End)
             if len(self.text_box.toPlainText()) > 0:
                 self.text_box.insertPlainText('\n\n')
@@ -895,11 +894,14 @@ class TranscriptionTasksTableWidget(QTableWidget):
             self.removeRow(task_row_index)
 
     def task_row_index(self, task_id: int) -> int | None:
-        table_items_matching_task_id = [item for item in self.findItems(str(task_id), Qt.MatchFlag.MatchExactly) if
-                                        item.column() == self.TASK_ID_COLUMN_INDEX]
-        if len(table_items_matching_task_id) == 0:
+        if table_items_matching_task_id := [
+            item
+            for item in self.findItems(str(task_id), Qt.MatchFlag.MatchExactly)
+            if item.column() == self.TASK_ID_COLUMN_INDEX
+        ]:
+            return table_items_matching_task_id[0].row()
+        else:
             return None
-        return table_items_matching_task_id[0].row()
 
     @staticmethod
     def find_task_id(index: QModelIndex):
@@ -1069,8 +1071,10 @@ class MainWindow(QMainWindow):
 
     @staticmethod
     def task_completed_or_errored(task: FileTranscriptionTask):
-        return task.status == FileTranscriptionTask.Status.COMPLETED or \
-            task.status == FileTranscriptionTask.Status.FAILED
+        return task.status in [
+            FileTranscriptionTask.Status.COMPLETED,
+            FileTranscriptionTask.Status.FAILED,
+        ]
 
     def on_clear_history_action_triggered(self):
         selected_rows = self.table_widget.selectionModel().selectedRows()
@@ -1147,8 +1151,12 @@ class MainWindow(QMainWindow):
         if len(selected_rows) == 0:
             return False
         return all(
-            [self.tasks[TranscriptionTasksTableWidget.find_task_id(selected_row)].status in statuses for selected_row in
-             selected_rows])
+            self.tasks[
+                TranscriptionTasksTableWidget.find_task_id(selected_row)
+            ].status
+            in statuses
+            for selected_row in selected_rows
+        )
 
     def on_table_double_clicked(self, index: QModelIndex):
         task_id = TranscriptionTasksTableWidget.find_task_id(index)
@@ -1166,8 +1174,10 @@ class MainWindow(QMainWindow):
     def load_tasks_from_cache(self):
         tasks = self.tasks_cache.load()
         for task in tasks:
-            if task.status == FileTranscriptionTask.Status.QUEUED or \
-                    task.status == FileTranscriptionTask.Status.IN_PROGRESS:
+            if task.status in [
+                FileTranscriptionTask.Status.QUEUED,
+                FileTranscriptionTask.Status.IN_PROGRESS,
+            ]:
                 task.status = None
                 self.transcriber_worker.add_task(task)
             else:
@@ -1352,7 +1362,7 @@ class TranscriptionOptionsGroupBox(QGroupBox):
 
         self.model_type_combo_box = QComboBox(self)
         if model_types is None:
-            model_types = [model_type for model_type in ModelType]
+            model_types = list(ModelType)
         for model_type in model_types:
             # Hide Whisper.cpp option is whisper.dll did not load correctly.
             # See: https://github.com/chidiwilliams/buzz/issues/274, https://github.com/chidiwilliams/buzz/issues/197
@@ -1421,9 +1431,15 @@ class TranscriptionOptionsGroupBox(QGroupBox):
     def reset_visible_rows(self):
         model_type = self.transcription_options.model.model_type
         self.form_layout.setRowVisible(self.hugging_face_search_line_edit, model_type == ModelType.HUGGING_FACE)
-        self.form_layout.setRowVisible(self.whisper_model_size_combo_box,
-                                       (model_type == ModelType.WHISPER) or (model_type == ModelType.WHISPER_CPP) or (
-                                               model_type == ModelType.FASTER_WHISPER))
+        self.form_layout.setRowVisible(
+            self.whisper_model_size_combo_box,
+            model_type
+            in [
+                ModelType.WHISPER,
+                ModelType.WHISPER_CPP,
+                ModelType.FASTER_WHISPER,
+            ],
+        )
         self.form_layout.setRowVisible(self.openai_access_token_edit, model_type == ModelType.OPEN_AI_WHISPER_API)
 
     def on_model_type_changed(self, text: str):
